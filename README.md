@@ -78,6 +78,20 @@ python -m streamlit run streamlit_app.py
 
 **注意**: `streamlit run app.py` ではなく `streamlit run streamlit_app.py` が正しいコマンドです。
 
+## 🌐 オンラインデモ・デプロイメント
+
+### Streamlit Community Cloud (推奨)
+1. [Streamlit Community Cloud](https://share.streamlit.io) にアクセス
+2. GitHubアカウントでログイン
+3. `t2k2pp/redmineplus` リポジトリを選択
+4. `streamlit_app.py` を指定してデプロイ
+5. 無料で利用可能
+
+### GitHub Pages
+プロジェクトの紹介ページ: https://t2k2pp.github.io/redmineplus
+
+**注意**: GitHub Pagesではアプリの実行はできません。紹介ページのみです。
+
 ## 設定
 
 アプリ内でRedmineの接続設定を変更する場合は、以下のファイルを編集してください：
