@@ -521,45 +521,77 @@ def show_dashboard():
             if 'selected_ticket_id' not in st.session_state:
                 st.session_state.selected_ticket_id = None
             
-            # データフレーム用の選択カラムを追加
-            page_df_with_select = page_df.copy()
-            page_df_with_select.insert(0, '選択', False)
+            # チケット選択UI
+            st.markdown("**チケット一覧：**")
             
-            # 選択された行をハイライト
+            # 選択されたチケットIDを追跡
+            selected_index = None
             if st.session_state.selected_ticket_id:
-                selected_row_mask = page_df_with_select['ID'] == st.session_state.selected_ticket_id
-                if selected_row_mask.any():
-                    page_df_with_select.loc[selected_row_mask, '選択'] = True
+                # 現在のページで選択されたチケットのインデックスを見つける
+                matching_rows = page_df[page_df['ID'] == st.session_state.selected_ticket_id]
+                if not matching_rows.empty:
+                    selected_index = matching_rows.index[0] - page_df.index[0]
             
-            # データフレーム表示（選択可能）
-            st.markdown("**チケット一覧（クリックで選択）：**")
+            # ラジオボタンでチケット選択
+            ticket_options = []
+            for idx, row in page_df.iterrows():
+                subject = row['件名'][:50] + "..." if len(row['件名']) > 50 else row['件名']
+                option_text = f"#{row['ID']} | {subject} | {row['ステータス']} | {row['担当者'] if row['担当者'] else '未設定'}"
+                ticket_options.append((option_text, row['ID']))
             
-            # データフレーム表示の準備
-            display_columns = ['ID', '件名', 'ステータス', '優先度', '担当者', '進捗率', '作成日']
-            styled_df = page_df[display_columns].copy()
-            
-            # 件名を短縮
-            styled_df['件名'] = styled_df['件名'].apply(
-                lambda x: x[:60] + "..." if len(str(x)) > 60 else str(x)
-            )
-            
-            # インデックスをリセット
-            styled_df = styled_df.reset_index(drop=True)
-            
-            # データフレーム表示
-            event = st.dataframe(
-                styled_df,
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single-row"
-            )
-            
-            # 選択された行の処理
-            if len(event.selection.rows) > 0:
-                selected_row_idx = event.selection.rows[0]
-                selected_ticket_id = page_df.iloc[selected_row_idx]['ID']
-                st.session_state.selected_ticket_id = selected_ticket_id
-                st.rerun()
+            if ticket_options:
+                # 現在選択されているチケットのインデックスを取得
+                current_selection_idx = 0
+                if st.session_state.selected_ticket_id:
+                    for i, (_, ticket_id) in enumerate(ticket_options):
+                        if ticket_id == st.session_state.selected_ticket_id:
+                            current_selection_idx = i
+                            break
+                
+                # ラジオボタンで選択
+                selected_option = st.radio(
+                    "チケットを選択してください：",
+                    options=range(len(ticket_options)),
+                    format_func=lambda x: ticket_options[x][0],
+                    index=current_selection_idx,
+                    key=f"ticket_selection_page_{st.session_state.current_page}"
+                )
+                
+                # 選択されたチケットIDを更新
+                if selected_option is not None:
+                    new_ticket_id = ticket_options[selected_option][1]
+                    if st.session_state.selected_ticket_id != new_ticket_id:
+                        st.session_state.selected_ticket_id = new_ticket_id
+                
+                # 詳細情報用のテーブル表示
+                st.markdown("---")
+                st.markdown("**詳細情報:**")
+                
+                # データフレーム表示（情報確認用）
+                display_columns = ['ID', '件名', 'ステータス', '優先度', '担当者', '進捗率', '作成日']
+                display_df = page_df[display_columns].copy()
+                
+                # 件名を短縮
+                display_df['件名'] = display_df['件名'].apply(
+                    lambda x: x[:40] + "..." if len(str(x)) > 40 else str(x)
+                )
+                
+                # 選択されたチケットをハイライト
+                if st.session_state.selected_ticket_id:
+                    highlight_mask = display_df['ID'] == st.session_state.selected_ticket_id
+                    if highlight_mask.any():
+                        st.markdown("**選択中のチケット:**")
+                        selected_row = display_df[highlight_mask]
+                        st.dataframe(selected_row, use_container_width=True)
+                        
+                        st.markdown("**その他のチケット:**")
+                        other_rows = display_df[~highlight_mask]
+                        if not other_rows.empty:
+                            st.dataframe(other_rows, use_container_width=True)
+                    else:
+                        st.dataframe(display_df, use_container_width=True)
+                else:
+                    st.dataframe(display_df, use_container_width=True)
             
             # 選択されたチケットがある場合の詳細表示
             if st.session_state.selected_ticket_id:
@@ -575,60 +607,60 @@ def show_dashboard():
                     try:
                         # チケット詳細データを取得
                         ticket_detail = client.get_issue_by_id(selected_ticket_id)
-                            
-                            # 基本情報を表示
-                            info_col1, info_col2 = st.columns(2)
-                            
-                            with info_col1:
-                                st.markdown("**基本情報**")
-                                st.write(f"**件名**: {ticket_detail.get('subject', '')}")
-                                st.write(f"**トラッカー**: {ticket_detail.get('tracker', {}).get('name', '')}")
-                                st.write(f"**ステータス**: {ticket_detail.get('status', {}).get('name', '')}")
-                                st.write(f"**優先度**: {ticket_detail.get('priority', {}).get('name', '')}")
-                                st.write(f"**進捗率**: {ticket_detail.get('done_ratio', 0)}%")
-                            
-                            with info_col2:
-                                st.markdown("**担当・日程**")
-                                st.write(f"**作成者**: {ticket_detail.get('author', {}).get('name', '')}")
-                                assigned_to = ticket_detail.get('assigned_to', {}).get('name', '') if ticket_detail.get('assigned_to') else '未設定'
-                                st.write(f"**担当者**: {assigned_to}")
-                                st.write(f"**開始日**: {ticket_detail.get('start_date', '未設定')}")
-                                st.write(f"**期限日**: {ticket_detail.get('due_date', '未設定')}")
-                                st.write(f"**実績工数**: {ticket_detail.get('spent_hours', 0)} 時間")
-                            
-                            # 説明文を表示
-                            st.markdown("**説明**")
-                            description = ticket_detail.get('description', '説明なし')
-                            if description and description.strip():
-                                # 長い説明文の場合は折りたたみ表示
-                                if len(description) > 300:
-                                    with st.expander("説明を表示", expanded=False):
-                                        st.write(description)
-                                else:
+                        
+                        # 基本情報を表示
+                        info_col1, info_col2 = st.columns(2)
+                        
+                        with info_col1:
+                            st.markdown("**基本情報**")
+                            st.write(f"**件名**: {ticket_detail.get('subject', '')}")
+                            st.write(f"**トラッカー**: {ticket_detail.get('tracker', {}).get('name', '')}")
+                            st.write(f"**ステータス**: {ticket_detail.get('status', {}).get('name', '')}")
+                            st.write(f"**優先度**: {ticket_detail.get('priority', {}).get('name', '')}")
+                            st.write(f"**進捗率**: {ticket_detail.get('done_ratio', 0)}%")
+                        
+                        with info_col2:
+                            st.markdown("**担当・日程**")
+                            st.write(f"**作成者**: {ticket_detail.get('author', {}).get('name', '')}")
+                            assigned_to = ticket_detail.get('assigned_to', {}).get('name', '') if ticket_detail.get('assigned_to') else '未設定'
+                            st.write(f"**担当者**: {assigned_to}")
+                            st.write(f"**開始日**: {ticket_detail.get('start_date', '未設定')}")
+                            st.write(f"**期限日**: {ticket_detail.get('due_date', '未設定')}")
+                            st.write(f"**実績工数**: {ticket_detail.get('spent_hours', 0)} 時間")
+                        
+                        # 説明文を表示
+                        st.markdown("**説明**")
+                        description = ticket_detail.get('description', '説明なし')
+                        if description and description.strip():
+                            # 長い説明文の場合は折りたたみ表示
+                            if len(description) > 300:
+                                with st.expander("説明を表示", expanded=False):
                                     st.write(description)
                             else:
-                                st.write("説明なし")
-                            
-                            # コメント表示
-                            journals = ticket_detail.get('journals', [])
-                            comments = [j for j in journals if j.get('notes', '').strip()]
-                            
-                            if comments:
-                                st.markdown("**コメント履歴**")
-                                with st.expander(f"コメント ({len(comments)}件)", expanded=False):
-                                    for comment in comments[-5:]:  # 最新5件まで表示
-                                        user_name = comment.get('user', {}).get('name', '不明なユーザー')
-                                        created_on = comment.get('created_on', '')
-                                        if created_on:
-                                            created_on = created_on[:19].replace('T', ' ')
-                                        notes = comment.get('notes', '')
-                                        
-                                        st.markdown(f"**{user_name}** - {created_on}")
-                                        st.write(notes)
-                                        st.markdown("---")
-                            
-                        except Exception as e:
-                            st.error(f"チケット詳細の取得に失敗しました: {e}")
+                                st.write(description)
+                        else:
+                            st.write("説明なし")
+                        
+                        # コメント表示
+                        journals = ticket_detail.get('journals', [])
+                        comments = [j for j in journals if j.get('notes', '').strip()]
+                        
+                        if comments:
+                            st.markdown("**コメント履歴**")
+                            with st.expander(f"コメント ({len(comments)}件)", expanded=False):
+                                for comment in comments[-5:]:  # 最新5件まで表示
+                                    user_name = comment.get('user', {}).get('name', '不明なユーザー')
+                                    created_on = comment.get('created_on', '')
+                                    if created_on:
+                                        created_on = created_on[:19].replace('T', ' ')
+                                    notes = comment.get('notes', '')
+                                    
+                                    st.markdown(f"**{user_name}** - {created_on}")
+                                    st.write(notes)
+                                    st.markdown("---")
+                        
+                    except Exception as e:
+                        st.error(f"チケット詳細の取得に失敗しました: {e}")
                     
                     with col2:
                         st.subheader("📄 帳票出力")
